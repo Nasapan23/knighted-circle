@@ -1,5 +1,6 @@
 ﻿          1 file(s) copied.
           1 file(s) copied.
-  Font.cpp
-C:\Users\Nisipeanu\Documents\GitHub\knighted-circle\Font.cpp(56,43): warning C4244: 'argument': conversion from 'std::streamsize' to 'const unsigned int', possible loss of data
+  Game.cpp
+C:\Users\Nisipeanu\Documents\GitHub\knighted-circle\Game.cpp(230,28): warning C4018: '<': signed/unsigned mismatch
+C:\Users\Nisipeanu\Documents\GitHub\knighted-circle\Game.cpp(273,24): warning C4018: '<': signed/unsigned mismatch
   lab_TGIP_1.vcxproj -> C:\Users\Nisipeanu\Documents\GitHub\knighted-circle\Debug\CG_Project.exe

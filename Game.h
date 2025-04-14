@@ -25,7 +25,13 @@ private:
     void update();
     void render();
     void renderHealthBar();
+    void renderEnemyHealthBar(const Enemy& enemy);
     void renderDeathScreen();
+    void spawnEnemies(int count);
+    
+    // Timing variables
+    double lastFrameTime;
+    float deltaTime;
 
     GLFWwindow* window;
     int screenWidth, screenHeight;
@@ -49,6 +55,9 @@ private:
     Player* player;
     std::vector<Enemy> enemies;
     float enemySpeed;
+    int maxEnemies;
+    float enemySpawnTimer;
+    float enemySpawnInterval;
 
     // Arrow projectile:
     struct Arrow {

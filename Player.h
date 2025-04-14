@@ -18,7 +18,7 @@ public:
 
     // Constructor: starting position, radius, and speed.
     Player(float startX, float startY, float rad, float spd);
-    void update(GLFWwindow* window);
+    void update(GLFWwindow* window, float deltaTime);
     void takeDamage(int amount);
     void heal(int amount);
     float getHealthPercentage() const;

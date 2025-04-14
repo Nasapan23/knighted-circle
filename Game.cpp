@@ -28,9 +28,10 @@ Game::Game()
     circleVAO(0), circleVBO(0),
     rectVAO(0), rectVBO(0),
     segments(50), baseRadius(0.05f),
-    enemySpeed(0.005f), arrowActive(false), mouseWasPressed(false),
+    enemySpeed(0.005f), maxEnemies(3), enemySpawnTimer(0.0f), enemySpawnInterval(5.0f),
+    arrowActive(false), mouseWasPressed(false),
     arrowSpeed(0.02f), damageTimer(0.0f), damageCooldown(3.0f),
-    deathScreenTimeout(3.0f)
+    deathScreenTimeout(3.0f), lastFrameTime(0.0), deltaTime(0.0f)
 {
     // Seed random number generator
     srand(static_cast<unsigned int>(time(NULL)));
@@ -151,38 +152,11 @@ bool Game::init() {
     glEnableVertexAttribArray(0);
     glBindVertexArray(0);
 
-    // Create the player. (Make player slower by reducing speed from 0.01f to, say, 0.005f)
+    // Create the player
     player = new Player(0.0f, 0.0f, baseRadius, 0.001f);
 
-    // Create enemies.
-    /*
-    const int numEnemies = 10;
-    for (int i = 0; i < numEnemies; ++i) {
-        float x, y;
-        int edge = rand() % 4;
-        float worldAspect = aspect;
-        switch (edge) {
-        case 0: // left
-            x = -worldAspect;
-            y = randomFloat(-1.0f, 1.0f);
-            break;
-        case 1: // right
-            x = worldAspect;
-            y = randomFloat(-1.0f, 1.0f);
-            break;
-        case 2: // top
-            x = randomFloat(-worldAspect, worldAspect);
-            y = 1.0f;
-            break;
-        case 3: // bottom
-            x = randomFloat(-worldAspect, worldAspect);
-            y = -1.0f;
-            break;
-        }
-        // Create enemy with same baseRadius and enemySpeed.
-        enemies.push_back(Enemy(x, y, baseRadius, enemySpeed));
-    }
-    */
+    // Create initial enemies
+    spawnEnemies(3);  // Start with 3 enemies
 
     arrowActive = false;
     mouseWasPressed = false;
@@ -214,8 +188,8 @@ void Game::processInput() {
     // Check ESC key.
     if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
         glfwSetWindowShouldClose(window, true);
-    // Update player input.
-    player->update(window);
+    // Update player input with deltaTime
+    player->update(window, deltaTime);
 
     // Handle arrow firing on left mouse click (debounced)
     if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS) {
@@ -248,12 +222,37 @@ void Game::processInput() {
     }
 }
 
+void Game::spawnEnemies(int count) {
+    float aspect = static_cast<float>(screenWidth) / screenHeight;
+    
+    for (int i = 0; i < count; i++) {
+        // Only spawn if we have less than the maximum number of enemies
+        if (enemies.size() < maxEnemies) {
+            // Spawn enemies at random positions around the player
+            float angle = randomFloat(0, 2 * 3.14159f);
+            float distance = randomFloat(1.0f, 1.8f);  // Spawn farther away from the player
+            
+            float spawnX = player->x + std::cos(angle) * distance;
+            float spawnY = player->y + std::sin(angle) * distance;
+            
+            // Clamp to screen boundaries
+            if (spawnX < -aspect + baseRadius) spawnX = -aspect + baseRadius;
+            if (spawnX > aspect - baseRadius) spawnX = aspect - baseRadius;
+            if (spawnY < -1.0f + baseRadius) spawnY = -1.0f + baseRadius;
+            if (spawnY > 1.0f - baseRadius) spawnY = 1.0f - baseRadius;
+            
+            // Add new enemy
+            enemies.push_back(Enemy(spawnX, spawnY, baseRadius, enemySpeed));
+        }
+    }
+}
+
 void Game::update() {
     processInput();
 
     // For testing purposes, damage player every few seconds (T key)
     if (glfwGetKey(window, GLFW_KEY_T) == GLFW_PRESS) {
-        damageTimer += 0.016f; // Assuming ~60 FPS
+        damageTimer += deltaTime;
         if (damageTimer >= damageCooldown) {
             player->takeDamage(10);
             damageTimer = 0.0f;
@@ -270,86 +269,67 @@ void Game::update() {
         player->takeDamage(player->currentHealth);
     }
 
-    // Update arrow.
+    // Spawn enemies periodically
+    if (enemies.size() < maxEnemies) {
+        enemySpawnTimer += deltaTime;
+        if (enemySpawnTimer >= enemySpawnInterval) {
+            spawnEnemies(1);  // Spawn one enemy at a time
+            enemySpawnTimer = 0.0f;
+        }
+    }
+
+    // Update arrows
     if (arrowActive) {
-        arrow.x += arrow.vx;
-        arrow.y += arrow.vy;
+        arrow.x += arrow.vx * deltaTime * 60.0f;
+        arrow.y += arrow.vy * deltaTime * 60.0f;
         float aspect = static_cast<float>(screenWidth) / screenHeight;
         if (arrow.x < -aspect + arrow.radius || arrow.x > aspect - arrow.radius ||
             arrow.y < -1.0f + arrow.radius || arrow.y > 1.0f - arrow.radius)
             arrowActive = false;
+            
+        // Check collision with enemies
+        for (auto& enemy : enemies) {
+            if (!enemy.isDead) {
+                float dx = arrow.x - enemy.x;
+                float dy = arrow.y - enemy.y;
+                float d = std::sqrt(dx * dx + dy * dy);
+                if (d < arrow.radius + enemy.radius) {
+                    enemy.takeDamage(10); // Arrow does 10 damage
+                    arrowActive = false;
+                    break;
+                }
+            }
+        }
     }
 
-    // Update enemies.
-    /*
+    // Update enemies and check for enemy arrow hits on player
     for (auto& enemy : enemies) {
-        enemy.update(player->x, player->y);
-        // Resolve collision with player.
-        float dx = enemy.x - player->x;
-        float dy = enemy.y - player->y;
-        float d = std::sqrt(dx * dx + dy * dy);
-        float minDist = enemy.radius + player->radius;
-        if (d < minDist && d > 0) {
-            float nx = dx / d;
-            float ny = dy / d;
-            enemy.x = player->x + nx * minDist;
-            enemy.y = player->y + ny * minDist;
-        }
-    }
-    */
-
-    // Resolve enemy-enemy collisions.
-    /*
-    for (size_t i = 0; i < enemies.size(); i++) {
-        for (size_t j = i + 1; j < enemies.size(); j++) {
-            float dx = enemies[i].x - enemies[j].x;
-            float dy = enemies[i].y - enemies[j].y;
-            float d = std::sqrt(dx * dx + dy * dy);
-            float minDist = enemies[i].radius + enemies[j].radius;
-            if (d < minDist && d > 0) {
-                float overlap = (minDist - d) / 2.0f;
-                float nx = dx / d;
-                float ny = dy / d;
-                enemies[i].x += nx * overlap;
-                enemies[i].y += ny * overlap;
-                enemies[j].x -= nx * overlap;
-                enemies[j].y -= ny * overlap;
+        // Update enemy with deltaTime
+        enemy.update(player->x, player->y, deltaTime);
+        
+        // Check if any enemy arrows hit the player
+        if (!player->isDead && !player->isInvulnerable) {
+            int damage = 0;
+            if (enemy.checkArrowHit(player->x, player->y, player->radius, damage)) {
+                player->takeDamage(damage);
             }
         }
     }
-    */
 
-    // Check arrow-enemy collisions.
-    /*
-    if (arrowActive) {
-        for (size_t i = 0; i < enemies.size(); i++) {
-            float dx = arrow.x - enemies[i].x;
-            float dy = arrow.y - enemies[i].y;
-            float d = std::sqrt(dx * dx + dy * dy);
-            if (d < arrow.radius + enemies[i].radius) {
-                enemies.erase(enemies.begin() + i);
-                arrowActive = false;
-                break;
-            }
-        }
-    }
-    */
-
-    // Boundary clamping for player.
+    // Boundary clamping for player
     float aspect = static_cast<float>(screenWidth) / screenHeight;
     if (player->x < -aspect + player->radius) player->x = -aspect + player->radius;
     if (player->x > aspect - player->radius) player->x = aspect - player->radius;
     if (player->y < -1.0f + player->radius) player->y = -1.0f + player->radius;
     if (player->y > 1.0f - player->radius) player->y = 1.0f - player->radius;
-    // Boundary clamping for enemies.
-    /*
+    
+    // Boundary clamping for enemies
     for (auto& enemy : enemies) {
         if (enemy.x < -aspect + enemy.radius) enemy.x = -aspect + enemy.radius;
         if (enemy.x > aspect - enemy.radius) enemy.x = aspect - enemy.radius;
         if (enemy.y < -1.0f + enemy.radius) enemy.y = -1.0f + enemy.radius;
         if (enemy.y > 1.0f - enemy.radius) enemy.y = 1.0f - enemy.radius;
     }
-    */
 }
 
 void Game::renderHealthBar() {
@@ -373,12 +353,48 @@ void Game::renderHealthBar() {
     
     // Draw health bar fill (bright red) - scale based on current health
     float healthPercentage = player->getHealthPercentage();
-    shaderProgram->setVec4("uColor", 0.9f, 0.2f, 0.2f, 1.0f);
-    model = glm::mat4(1.0f);
+    if (healthPercentage > 0.0f) { // Only render if there's health remaining
+        shaderProgram->setVec4("uColor", 0.9f, 0.2f, 0.2f, 1.0f);
+        model = glm::mat4(1.0f);
+        model = glm::translate(model, glm::vec3(barPosX, barPosY, 0.0f));
+        model = glm::scale(model, glm::vec3(barWidth * healthPercentage, barHeight, 1.0f));
+        shaderProgram->setMat4("uModel", glm::value_ptr(model));
+        glDrawArrays(GL_TRIANGLES, 0, 6);
+    }
+    
+    glBindVertexArray(0);
+}
+
+void Game::renderEnemyHealthBar(const Enemy& enemy) {
+    if (enemy.isDead) return; // Don't render health bar for dead enemies
+    
+    // Bind the rectangle VAO
+    glBindVertexArray(rectVAO);
+    
+    // Set up health bar position and size (above the enemy)
+    float barWidth = 0.1f;  // Smaller than player's health bar
+    float barHeight = 0.02f;
+    float barPosX = enemy.x - barWidth / 2.0f; // Center bar above enemy
+    float barPosY = enemy.y + enemy.radius + 0.02f; // Position above enemy with small gap
+    
+    // Draw health bar background (dark red)
+    shaderProgram->setVec4("uColor", 0.4f, 0.1f, 0.1f, 1.0f);
+    glm::mat4 model = glm::mat4(1.0f);
     model = glm::translate(model, glm::vec3(barPosX, barPosY, 0.0f));
-    model = glm::scale(model, glm::vec3(barWidth * healthPercentage, barHeight, 1.0f));
+    model = glm::scale(model, glm::vec3(barWidth, barHeight, 1.0f));
     shaderProgram->setMat4("uModel", glm::value_ptr(model));
     glDrawArrays(GL_TRIANGLES, 0, 6);
+    
+    // Draw remaining health (bright red) - scale based on current health
+    float healthPercentage = enemy.getHealthPercentage();
+    if (healthPercentage > 0.0f) { // Only render if there's health remaining
+        shaderProgram->setVec4("uColor", 0.9f, 0.2f, 0.2f, 1.0f);
+        model = glm::mat4(1.0f);
+        model = glm::translate(model, glm::vec3(barPosX, barPosY, 0.0f));
+        model = glm::scale(model, glm::vec3(barWidth * healthPercentage, barHeight, 1.0f));
+        shaderProgram->setMat4("uModel", glm::value_ptr(model));
+        glDrawArrays(GL_TRIANGLES, 0, 6);
+    }
     
     glBindVertexArray(0);
 }
@@ -449,9 +465,13 @@ void Game::render() {
     shaderProgram->use();
     shaderProgram->setMat4("uProjection", glm::value_ptr(projection));
 
-    // Set up for player and arrow rendering (old method)
-    glm::mat4 identityModel = glm::mat4(1.0f);
-    shaderProgram->setMat4("uModel", glm::value_ptr(identityModel));
+    // Set up for player rendering
+    glm::mat4 model = glm::mat4(1.0f);
+    model = glm::translate(model, glm::vec3(player->x, player->y, 0.0f));
+    model = glm::scale(model, glm::vec3(1.0f, 1.0f, 1.0f));
+    shaderProgram->setMat4("uModel", glm::value_ptr(model));
+    shaderProgram->setVec2("uOffset", 0.0f, 0.0f); // Reset offset
+    shaderProgram->setFloat("uScale", 1.0f);
     
     // Draw player
     if (player->isDead) {
@@ -470,35 +490,57 @@ void Game::render() {
         shaderProgram->setVec4("uColor", 0.2f, 0.7f, 0.3f, 1.0f);
     }
     
-    shaderProgram->setFloat("uScale", 1.0f);
-    shaderProgram->setVec2("uOffset", player->x, player->y);
     glBindVertexArray(circleVAO);
     glDrawArrays(GL_TRIANGLE_FAN, 0, segments + 2);
     glBindVertexArray(0);
 
-    // Draw enemies (red circles)
-    /*
-    shaderProgram->setVec4("uColor", 1.0f, 0.0f, 0.0f, 1.0f);
-    for (const auto& enemy : enemies) {
-        shaderProgram->setFloat("uScale", enemy.radius / baseRadius);
-        shaderProgram->setVec2("uOffset", enemy.x, enemy.y);
-        glBindVertexArray(circleVAO);
-        glDrawArrays(GL_TRIANGLE_FAN, 0, segments + 2);
-    }
-    glBindVertexArray(0);
-    */
-
-    // Draw arrow (yellow circle)
+    // Draw player arrow (yellow circle)
     if (arrowActive && !player->isDead) {  // Don't show arrow if player is dead
         shaderProgram->setVec4("uColor", 1.0f, 1.0f, 0.0f, 1.0f);
-        shaderProgram->setFloat("uScale", arrow.radius / baseRadius);
-        shaderProgram->setVec2("uOffset", arrow.x, arrow.y);
+        model = glm::mat4(1.0f);
+        model = glm::translate(model, glm::vec3(arrow.x, arrow.y, 0.0f));
+        model = glm::scale(model, glm::vec3(arrow.radius / baseRadius, arrow.radius / baseRadius, 1.0f));
+        shaderProgram->setMat4("uModel", glm::value_ptr(model));
         glBindVertexArray(circleVAO);
         glDrawArrays(GL_TRIANGLE_FAN, 0, segments + 2);
+        glBindVertexArray(0);
     }
-    glBindVertexArray(0);
 
-    // Reset offset for health bar and death screen
+    // Draw all enemies and their arrows
+    for (const auto& enemy : enemies) {
+        if (!enemy.isDead) {
+            // Draw enemy (red circle)
+            shaderProgram->setVec4("uColor", 0.8f, 0.2f, 0.2f, 1.0f); // Red color for enemy
+            model = glm::mat4(1.0f);
+            model = glm::translate(model, glm::vec3(enemy.x, enemy.y, 0.0f));
+            model = glm::scale(model, glm::vec3(enemy.radius / baseRadius, enemy.radius / baseRadius, 1.0f));
+            shaderProgram->setMat4("uModel", glm::value_ptr(model));
+            glBindVertexArray(circleVAO);
+            glDrawArrays(GL_TRIANGLE_FAN, 0, segments + 2);
+            glBindVertexArray(0);
+            
+            // Draw enemy health bar
+            renderEnemyHealthBar(enemy);
+            
+            // Draw enemy arrows
+            for (const auto& arrow : enemy.arrows) {
+                if (arrow.active) {
+                    shaderProgram->setVec4("uColor", 0.8f, 0.6f, 0.0f, 1.0f); // Orange for enemy arrows
+                    model = glm::mat4(1.0f);
+                    model = glm::translate(model, glm::vec3(arrow.x, arrow.y, 0.0f));
+                    model = glm::scale(model, glm::vec3(arrow.radius / baseRadius, arrow.radius / baseRadius, 1.0f));
+                    shaderProgram->setMat4("uModel", glm::value_ptr(model));
+                    glBindVertexArray(circleVAO);
+                    glDrawArrays(GL_TRIANGLE_FAN, 0, segments + 2);
+                    glBindVertexArray(0);
+                }
+            }
+        }
+    }
+
+    // Reset for health bar and death screen
+    model = glm::mat4(1.0f);
+    shaderProgram->setMat4("uModel", glm::value_ptr(model));
     shaderProgram->setVec2("uOffset", 0.0f, 0.0f);
     shaderProgram->setFloat("uScale", 1.0f);
 
@@ -531,6 +573,11 @@ void Game::cleanup() {
         shaderProgram = nullptr;
     }
     
+    if (player) {
+        delete player;
+        player = nullptr;
+    }
+    
     glDeleteVertexArrays(1, &circleVAO);
     glDeleteBuffers(1, &circleVBO);
     glDeleteVertexArrays(1, &rectVAO);
@@ -540,7 +587,14 @@ void Game::cleanup() {
 }
 
 void Game::run() {
+    lastFrameTime = glfwGetTime();
+    
     while (!glfwWindowShouldClose(window)) {
+        // Calculate delta time
+        double currentTime = glfwGetTime();
+        deltaTime = static_cast<float>(currentTime - lastFrameTime);
+        lastFrameTime = currentTime;
+        
         processInput();
         update();
         render();

@@ -7,24 +7,27 @@ Player::Player(float startX, float startY, float rad, float spd)
       isDead(false), timeOfDeath(0.0f) {
 }
 
-void Player::update(GLFWwindow* window) {
+void Player::update(GLFWwindow* window, float deltaTime) {
     // Don't process input if player is dead
     if (isDead) {
         return;
     }
     
+    // Calculate movement based on deltaTime for consistent speed
+    float adjustedSpeed = speed * deltaTime * 60.0f; // Scale for 60fps equivalent
+    
     if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS)
-        y += speed;
+        y += adjustedSpeed;
     if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS)
-        y -= speed;
+        y -= adjustedSpeed;
     if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS)
-        x -= speed;
+        x -= adjustedSpeed;
     if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS)
-        x += speed;
+        x += adjustedSpeed;
         
     // Update invulnerability timer
     if (isInvulnerable) {
-        invulnerabilityTimer -= 0.016f; // Assuming ~60 FPS, 16ms per frame
+        invulnerabilityTimer -= deltaTime; // Use deltaTime instead of fixed value
         if (invulnerabilityTimer <= 0) {
             isInvulnerable = false;
             invulnerabilityTimer = 0;
