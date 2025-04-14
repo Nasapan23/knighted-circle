@@ -1,0 +1,4 @@
+We are developing a medieval-themed game and will focus on creating a minimum viable product (MVP) for the demo. The MVP should include the following features: 
+1. Character movement mechanics.
+2. A health system for the character that allows for taking damage and dealing damage to enemies.
+3. Collision detection and response for interactions between the character and other entities in the game.

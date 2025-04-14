@@ -8,10 +8,21 @@ public:
     float x, y;
     float radius;
     float speed;
+    int maxHealth;
+    int currentHealth;
+    bool isInvulnerable;
+    float invulnerabilityTimer;
+    float invulnerabilityDuration;
+    bool isDead;
+    float timeOfDeath;
 
     // Constructor: starting position, radius, and speed.
     Player(float startX, float startY, float rad, float spd);
     void update(GLFWwindow* window);
+    void takeDamage(int amount);
+    void heal(int amount);
+    float getHealthPercentage() const;
+    void die();
 };
 
 #endif

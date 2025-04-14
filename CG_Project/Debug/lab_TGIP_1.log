@@ -1,4 +1,5 @@
 ﻿          1 file(s) copied.
           1 file(s) copied.
-  Game.cpp
-  lab_TGIP_1.vcxproj -> C:\Users\eduard\Desktop\CG_Project\CG_Project\Debug\CG_Project.exe
+  Font.cpp
+C:\Users\Nisipeanu\Documents\GitHub\knighted-circle\Font.cpp(56,43): warning C4244: 'argument': conversion from 'std::streamsize' to 'const unsigned int', possible loss of data
+  lab_TGIP_1.vcxproj -> C:\Users\Nisipeanu\Documents\GitHub\knighted-circle\Debug\CG_Project.exe

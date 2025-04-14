@@ -12,6 +12,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Enemy.cpp" />
+    <ClCompile Include="Font.cpp" />
     <ClCompile Include="Game.cpp" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="Player.cpp" />
@@ -19,10 +20,13 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="fragment_shader.glsl" />
+    <None Include="text_fragment.glsl" />
+    <None Include="text_vertex.glsl" />
     <None Include="vertex_shader.glsl" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Enemy.h" />
+    <ClInclude Include="Font.h" />
     <ClInclude Include="Game.h" />
     <ClInclude Include="Player.h" />
     <ClInclude Include="Shader.h" />

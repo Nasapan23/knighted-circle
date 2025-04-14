@@ -24,10 +24,13 @@ std::vector<float> createCircleVertices(float radius, int segments) {
 
 Game::Game()
     : window(nullptr), screenWidth(0), screenHeight(0),
-    shaderProgram(nullptr), circleVAO(0), circleVBO(0),
+    shaderProgram(nullptr), textShader(nullptr), gameFont(nullptr),
+    circleVAO(0), circleVBO(0),
+    rectVAO(0), rectVBO(0),
     segments(50), baseRadius(0.05f),
     enemySpeed(0.005f), arrowActive(false), mouseWasPressed(false),
-    arrowSpeed(0.02f)
+    arrowSpeed(0.02f), damageTimer(0.0f), damageCooldown(3.0f),
+    deathScreenTimeout(3.0f)
 {
     // Seed random number generator
     srand(static_cast<unsigned int>(time(NULL)));
@@ -61,14 +64,18 @@ bool Game::init() {
         glfwTerminate();
         return false;
     }
-    const GLFWvidmode* mode = glfwGetVideoMode(monitor);
-    if (!mode) {
-        std::cerr << "Failed to get video mode" << std::endl;
-        glfwTerminate();
-        return false;
-    }
-    screenWidth = mode->width;
-    screenHeight = mode->height;
+    
+    // Hardcode resolution to 1920x1080 instead of using monitor's resolution
+    screenWidth = 1920;
+    screenHeight = 1080;
+    
+    // Create window with 1920x1080 resolution in fullscreen mode
+    glfwWindowHint(GLFW_RED_BITS, 8);
+    glfwWindowHint(GLFW_GREEN_BITS, 8);
+    glfwWindowHint(GLFW_BLUE_BITS, 8);
+    glfwWindowHint(GLFW_ALPHA_BITS, 8);
+    glfwWindowHint(GLFW_DEPTH_BITS, 24);
+    glfwWindowHint(GLFW_STENCIL_BITS, 8);
     window = glfwCreateWindow(screenWidth, screenHeight, "Medieval Fantasy Fight", monitor, nullptr);
     if (!window) {
         std::cerr << "Failed to create GLFW window" << std::endl;
@@ -87,11 +94,50 @@ bool Game::init() {
 
     // Build shader program
     shaderProgram = new Shader("vertex_shader.glsl", "fragment_shader.glsl");
+    textShader = new Shader("text_vertex.glsl", "text_fragment.glsl");
 
-    // Set up an orthographic projection.
+    // Enable blending for transparent elements
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+    // Set up projections
     float aspect = static_cast<float>(screenWidth) / screenHeight;
     // World coordinates: X from -aspect to aspect, Y from -1 to 1.
     projection = glm::ortho(-aspect, aspect, -1.0f, 1.0f, -1.0f, 1.0f);
+    // Text coordinates: X from 0 to screenWidth, Y from 0 to screenHeight (bottom to top)
+    textProjection = glm::ortho(0.0f, static_cast<float>(screenWidth), 0.0f, static_cast<float>(screenHeight));
+
+    // Initialize font system
+    gameFont = new Font();
+    
+    // Try different font paths in order of preference
+    if (!gameFont->init("assets/fonts/arial.ttf", 48)) {
+        if (!gameFont->init("assets/fonts/medieval.ttf", 48)) {
+            if (!gameFont->init("C:/Windows/Fonts/arial.ttf", 48)) {
+                std::cerr << "Failed to load any font" << std::endl;
+                // Continue anyway, we'll just not render text
+            }
+            else {
+                std::cout << "Loaded system font: C:/Windows/Fonts/arial.ttf" << std::endl;
+            }
+        }
+        else {
+            std::cout << "Loaded font: assets/fonts/medieval.ttf" << std::endl;
+        }
+    }
+    else {
+        std::cout << "Loaded font: assets/fonts/arial.ttf" << std::endl;
+    }
+
+    // Configure text shader
+    textShader->use();
+    textShader->setMat4("projection", glm::value_ptr(textProjection));
+    textShader->setInt("text", 0);
+    
+    // Set the shader for the font
+    if (gameFont) {
+        gameFont->setShader(textShader->ID);
+    }
 
     // Generate circle vertices (player, enemy, arrow all use the same base mesh)
     circleVertices = createCircleVertices(baseRadius, segments);
@@ -106,9 +152,10 @@ bool Game::init() {
     glBindVertexArray(0);
 
     // Create the player. (Make player slower by reducing speed from 0.01f to, say, 0.005f)
-    player = new Player(0.0f, 0.0f, baseRadius, 0.005f);
+    player = new Player(0.0f, 0.0f, baseRadius, 0.001f);
 
     // Create enemies.
+    /*
     const int numEnemies = 10;
     for (int i = 0; i < numEnemies; ++i) {
         float x, y;
@@ -135,9 +182,30 @@ bool Game::init() {
         // Create enemy with same baseRadius and enemySpeed.
         enemies.push_back(Enemy(x, y, baseRadius, enemySpeed));
     }
+    */
 
     arrowActive = false;
     mouseWasPressed = false;
+
+    // Generate rectangle vertices for health bar
+    std::vector<float> rectVertices = {
+        // positions (x, y)
+        0.0f, 0.0f,  // bottom left
+        1.0f, 0.0f,  // bottom right
+        1.0f, 1.0f,  // top right
+        0.0f, 0.0f,  // bottom left
+        1.0f, 1.0f,  // top right
+        0.0f, 1.0f   // top left
+    };
+    
+    glGenVertexArrays(1, &rectVAO);
+    glGenBuffers(1, &rectVBO);
+    glBindVertexArray(rectVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, rectVBO);
+    glBufferData(GL_ARRAY_BUFFER, rectVertices.size() * sizeof(float), rectVertices.data(), GL_STATIC_DRAW);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(0);
+    glBindVertexArray(0);
 
     return true;
 }
@@ -183,6 +251,25 @@ void Game::processInput() {
 void Game::update() {
     processInput();
 
+    // For testing purposes, damage player every few seconds (T key)
+    if (glfwGetKey(window, GLFW_KEY_T) == GLFW_PRESS) {
+        damageTimer += 0.016f; // Assuming ~60 FPS
+        if (damageTimer >= damageCooldown) {
+            player->takeDamage(10);
+            damageTimer = 0.0f;
+        }
+    }
+    
+    // For testing purposes, heal player (H key)
+    if (glfwGetKey(window, GLFW_KEY_H) == GLFW_PRESS) {
+        player->heal(5);
+    }
+    
+    // For testing purposes, kill player instantly (K key)
+    if (glfwGetKey(window, GLFW_KEY_K) == GLFW_PRESS && !player->isDead) {
+        player->takeDamage(player->currentHealth);
+    }
+
     // Update arrow.
     if (arrowActive) {
         arrow.x += arrow.vx;
@@ -194,6 +281,7 @@ void Game::update() {
     }
 
     // Update enemies.
+    /*
     for (auto& enemy : enemies) {
         enemy.update(player->x, player->y);
         // Resolve collision with player.
@@ -208,8 +296,10 @@ void Game::update() {
             enemy.y = player->y + ny * minDist;
         }
     }
+    */
 
     // Resolve enemy-enemy collisions.
+    /*
     for (size_t i = 0; i < enemies.size(); i++) {
         for (size_t j = i + 1; j < enemies.size(); j++) {
             float dx = enemies[i].x - enemies[j].x;
@@ -227,8 +317,10 @@ void Game::update() {
             }
         }
     }
+    */
 
     // Check arrow-enemy collisions.
+    /*
     if (arrowActive) {
         for (size_t i = 0; i < enemies.size(); i++) {
             float dx = arrow.x - enemies[i].x;
@@ -241,6 +333,7 @@ void Game::update() {
             }
         }
     }
+    */
 
     // Boundary clamping for player.
     float aspect = static_cast<float>(screenWidth) / screenHeight;
@@ -249,11 +342,104 @@ void Game::update() {
     if (player->y < -1.0f + player->radius) player->y = -1.0f + player->radius;
     if (player->y > 1.0f - player->radius) player->y = 1.0f - player->radius;
     // Boundary clamping for enemies.
+    /*
     for (auto& enemy : enemies) {
         if (enemy.x < -aspect + enemy.radius) enemy.x = -aspect + enemy.radius;
         if (enemy.x > aspect - enemy.radius) enemy.x = aspect - enemy.radius;
         if (enemy.y < -1.0f + enemy.radius) enemy.y = -1.0f + enemy.radius;
         if (enemy.y > 1.0f - enemy.radius) enemy.y = 1.0f - enemy.radius;
+    }
+    */
+}
+
+void Game::renderHealthBar() {
+    // Bind the rectangle VAO
+    glBindVertexArray(rectVAO);
+    
+    // Set up health bar position and size (top left)
+    float aspect = static_cast<float>(screenWidth) / screenHeight;
+    float barWidth = 0.3f;
+    float barHeight = 0.05f;
+    float barPosX = -aspect + 0.05f; // 0.05f padding from left edge
+    float barPosY = 1.0f - barHeight - 0.05f; // 0.05f padding from top edge
+    
+    // Draw health bar background (dark red)
+    shaderProgram->setVec4("uColor", 0.4f, 0.1f, 0.1f, 1.0f);
+    glm::mat4 model = glm::mat4(1.0f);
+    model = glm::translate(model, glm::vec3(barPosX, barPosY, 0.0f));
+    model = glm::scale(model, glm::vec3(barWidth, barHeight, 1.0f));
+    shaderProgram->setMat4("uModel", glm::value_ptr(model));
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+    
+    // Draw health bar fill (bright red) - scale based on current health
+    float healthPercentage = player->getHealthPercentage();
+    shaderProgram->setVec4("uColor", 0.9f, 0.2f, 0.2f, 1.0f);
+    model = glm::mat4(1.0f);
+    model = glm::translate(model, glm::vec3(barPosX, barPosY, 0.0f));
+    model = glm::scale(model, glm::vec3(barWidth * healthPercentage, barHeight, 1.0f));
+    shaderProgram->setMat4("uModel", glm::value_ptr(model));
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+    
+    glBindVertexArray(0);
+}
+
+void Game::renderDeathScreen() {
+    // Calculate how long the player has been dead
+    float timeSinceDeath = static_cast<float>(glfwGetTime()) - player->timeOfDeath;
+    
+    // If player has been dead longer than timeout, show death screen
+    if (timeSinceDeath >= deathScreenTimeout) {
+        // Bind the rectangle VAO
+        glBindVertexArray(rectVAO);
+        
+        // Fill the screen with dark overlay
+        float aspect = static_cast<float>(screenWidth) / screenHeight;
+        shaderProgram->setVec4("uColor", 0.0f, 0.0f, 0.0f, 0.7f); // Semi-transparent black
+        
+        glm::mat4 model = glm::mat4(1.0f);
+        model = glm::translate(model, glm::vec3(-aspect, -1.0f, 0.0f)); // Bottom-left corner
+        model = glm::scale(model, glm::vec3(2.0f * aspect, 2.0f, 1.0f)); // Scale to fill screen
+        shaderProgram->setMat4("uModel", glm::value_ptr(model));
+        
+        // Enable blending for transparent overlay
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        
+        glDrawArrays(GL_TRIANGLES, 0, 6);
+        
+        // Render text with proper font rendering
+        if (gameFont) {
+            // Center "YOU DIED!" text on screen
+            const std::string deathMessage = "YOU DIED!";
+            float textScale = 2.0f;
+            
+            // In LearnOpenGL tutorial, text coordinates are from the baseline
+            // Calculate width of text (approximate)
+            float textWidth = deathMessage.length() * 20.0f * textScale;
+            
+            // Position text in center of screen
+            float textX = (screenWidth - textWidth) / 2.0f;
+            float textY = screenHeight / 2.0f;
+            
+            // Draw "YOU DIED!" text - red color
+            gameFont->renderText(deathMessage, textX, textY, textScale, glm::vec3(0.8f, 0.0f, 0.0f));
+            
+            // Draw instruction text below
+            const std::string exitMessage = "Press ESC to exit";
+            float instructionScale = 1.0f;
+            
+            // Position instruction text below main message
+            float instructionWidth = exitMessage.length() * 10.0f * instructionScale;
+            float instructionX = (screenWidth - instructionWidth) / 2.0f;
+            float instructionY = textY - 50.0f;
+            
+            gameFont->renderText(exitMessage, instructionX, instructionY, instructionScale, glm::vec3(1.0f, 1.0f, 1.0f));
+        }
+        
+        // Disable blending
+        glDisable(GL_BLEND);
+        
+        glBindVertexArray(0);
     }
 }
 
@@ -263,8 +449,27 @@ void Game::render() {
     shaderProgram->use();
     shaderProgram->setMat4("uProjection", glm::value_ptr(projection));
 
-    // Draw player (green circle)
-    shaderProgram->setVec4("uColor", 0.2f, 0.7f, 0.3f, 1.0f);
+    // Set up for player and arrow rendering (old method)
+    glm::mat4 identityModel = glm::mat4(1.0f);
+    shaderProgram->setMat4("uModel", glm::value_ptr(identityModel));
+    
+    // Draw player
+    if (player->isDead) {
+        // Dead player (red)
+        shaderProgram->setVec4("uColor", 0.7f, 0.0f, 0.0f, 1.0f); // Red
+    } else if (player->isInvulnerable) {
+        // Flash the player white during invulnerability
+        int flashInterval = static_cast<int>(player->invulnerabilityTimer * 10) % 2;
+        if (flashInterval == 0) {
+            shaderProgram->setVec4("uColor", 1.0f, 1.0f, 1.0f, 1.0f); // White
+        } else {
+            shaderProgram->setVec4("uColor", 0.2f, 0.7f, 0.3f, 1.0f); // Green
+        }
+    } else {
+        // Normal player (green)
+        shaderProgram->setVec4("uColor", 0.2f, 0.7f, 0.3f, 1.0f);
+    }
+    
     shaderProgram->setFloat("uScale", 1.0f);
     shaderProgram->setVec2("uOffset", player->x, player->y);
     glBindVertexArray(circleVAO);
@@ -272,6 +477,7 @@ void Game::render() {
     glBindVertexArray(0);
 
     // Draw enemies (red circles)
+    /*
     shaderProgram->setVec4("uColor", 1.0f, 0.0f, 0.0f, 1.0f);
     for (const auto& enemy : enemies) {
         shaderProgram->setFloat("uScale", enemy.radius / baseRadius);
@@ -280,9 +486,10 @@ void Game::render() {
         glDrawArrays(GL_TRIANGLE_FAN, 0, segments + 2);
     }
     glBindVertexArray(0);
+    */
 
     // Draw arrow (yellow circle)
-    if (arrowActive) {
+    if (arrowActive && !player->isDead) {  // Don't show arrow if player is dead
         shaderProgram->setVec4("uColor", 1.0f, 1.0f, 0.0f, 1.0f);
         shaderProgram->setFloat("uScale", arrow.radius / baseRadius);
         shaderProgram->setVec2("uOffset", arrow.x, arrow.y);
@@ -291,12 +498,43 @@ void Game::render() {
     }
     glBindVertexArray(0);
 
+    // Reset offset for health bar and death screen
+    shaderProgram->setVec2("uOffset", 0.0f, 0.0f);
+    shaderProgram->setFloat("uScale", 1.0f);
+
+    // Draw health bar (only if player is alive)
+    if (!player->isDead) {
+        renderHealthBar();
+    }
+    
+    // Draw death screen if player is dead
+    if (player->isDead) {
+        renderDeathScreen();
+    }
+
     glfwSwapBuffers(window);
 }
 
 void Game::cleanup() {
+    if (gameFont) {
+        delete gameFont;
+        gameFont = nullptr;
+    }
+    
+    if (textShader) {
+        delete textShader;
+        textShader = nullptr;
+    }
+    
+    if (shaderProgram) {
+        delete shaderProgram;
+        shaderProgram = nullptr;
+    }
+    
     glDeleteVertexArrays(1, &circleVAO);
     glDeleteBuffers(1, &circleVBO);
+    glDeleteVertexArrays(1, &rectVAO);
+    glDeleteBuffers(1, &rectVBO);
     glfwDestroyWindow(window);
     glfwTerminate();
 }
