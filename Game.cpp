@@ -35,19 +35,19 @@ Game::Game()
     rightMouseWasPressed(false),
     deathScreenTimeout(3.0f), lastFrameTime(0.0), deltaTime(0.0f)
 {
-    // Initialize sword parameters
-    sword.offsetX = baseRadius * 2.5f;  // Position sword farther from player
+    // Initialize sword parameters - simplified
+    sword.offsetX = baseRadius * 2.5f;  // Initial position
     sword.offsetY = 0.0f;
     sword.angle = 0.0f;
-    sword.length = baseRadius * 3.5f;   // Slightly longer sword
-    sword.width = baseRadius * 0.4f;    // Slightly thinner sword blade
-    sword.hitboxRadius = baseRadius * 1.5f; // Slightly larger hitbox for better hit detection
+    sword.length = baseRadius * 3.5f;   
+    sword.width = baseRadius * 0.4f;    
+    sword.hitboxRadius = baseRadius * 1.5f; 
     sword.isSwinging = false;
-    sword.swingSpeed = 0.03f;           // MUCH slower swing speed for better visibility
-    sword.swingAngle = 3.14159f * 2.0f; // Not directly used in the new animation
+    sword.swingSpeed = 0.05f;           // Moderate speed for visibility
+    sword.swingAngle = 3.14159f * 2.0f; // Not used in new system
     sword.swingProgress = 0.0f;
-    sword.damage = 20;                  // Damage value
-    sword.cooldown = 0.8f;              // Longer cooldown (0.8 seconds)
+    sword.damage = 25;                  // Good damage
+    sword.cooldown = 1.0f;              // 1 second cooldown
     sword.cooldownTimer = 0.0f;
     
     // Seed random number generator
@@ -242,29 +242,15 @@ void Game::processInput() {
         mouseWasPressed = false;
     }
     
-    // Handle sword swing on right mouse click (debounced)
+    // Handle sword swing on right mouse click - SIMPLIFIED
     if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS) {
         if (!sword.isSwinging && sword.cooldownTimer <= 0 && !rightMouseWasPressed && !player->isDead) {
-            // CRITICAL: Before starting swing, ensure sword position is valid
-            // If the sword has disappeared, this will reset it
-            float currentBaseAngle = glfwGetTime() * 0.4f;
-            float distanceFromPlayer = player->radius * 2.5f;
-            
-            // Only reset if position is invalid (close to zero)
-            if (std::abs(sword.offsetX) < 0.001f && std::abs(sword.offsetY) < 0.001f) {
-                std::cout << "Fixing invalid sword position before swing!" << std::endl;
-                sword.offsetX = cos(currentBaseAngle) * distanceFromPlayer;
-                sword.offsetY = sin(currentBaseAngle) * distanceFromPlayer;
-            }
-            
-            // Start a new sword swing
+            // Start sword attack - simple and reliable
             sword.isSwinging = true;
             sword.swingProgress = 0.0f;
-            sword.angle = currentBaseAngle; // Use current base angle as starting point
             rightMouseWasPressed = true;
             
-            // Debug: Report sword swing start with position
-            std::cout << "Starting sword swing at position: " << sword.offsetX << ", " << sword.offsetY << std::endl;
+            std::cout << "Starting sword attack!" << std::endl;
         }
     }
     else {
@@ -547,23 +533,8 @@ void Game::render() {
     glDrawArrays(GL_TRIANGLE_FAN, 0, segments + 2);
     glBindVertexArray(0);
     
-    // CRITICAL: Render the sword hovering around the player
-    // Always call this even if player is dead - the renderSword function 
-    // has its own check to not render for dead players
-    try {
-        // Wrap in try/catch to prevent crashes if something goes wrong
-        renderSword();
-    } catch (const std::exception& e) {
-        std::cerr << "ERROR rendering sword: " << e.what() << std::endl;
-        // Attempt to fix the sword state
-        sword.isSwinging = false;
-        sword.swingProgress = 0.0f;
-        float baseAngle = glfwGetTime() * 0.4f;
-        float distanceFromPlayer = player->radius * 2.5f;
-        sword.offsetX = cos(baseAngle) * distanceFromPlayer;
-        sword.offsetY = sin(baseAngle) * distanceFromPlayer;
-        sword.angle = baseAngle;
-    }
+    // Render the sword
+    renderSword();
 
     // Draw player arrow (yellow circle)
     if (arrowActive && !player->isDead) {  // Don't show arrow if player is dead
@@ -661,29 +632,12 @@ void Game::cleanup() {
 
 void Game::run() {
     lastFrameTime = glfwGetTime();
-    float lastSwordCheck = 0.0f;
     
     while (!glfwWindowShouldClose(window)) {
         // Calculate delta time
         double currentTime = glfwGetTime();
         deltaTime = static_cast<float>(currentTime - lastFrameTime);
         lastFrameTime = currentTime;
-        
-        // Periodic check to ensure sword is visible
-        if (currentTime - lastSwordCheck > 5.0f) {
-            lastSwordCheck = static_cast<float>(currentTime);
-            
-            // Check sword state
-            if (std::abs(sword.offsetX) < 0.001f && std::abs(sword.offsetY) < 0.001f) {
-                std::cerr << "WARNING: Sword position near origin detected in run loop. Fixing..." << std::endl;
-                // Reset sword position
-                float baseAngle = glfwGetTime() * 0.4f;
-                float distanceFromPlayer = player->radius * 2.5f;
-                sword.offsetX = cos(baseAngle) * distanceFromPlayer;
-                sword.offsetY = sin(baseAngle) * distanceFromPlayer;
-                sword.angle = baseAngle;
-            }
-        }
         
         processInput();
         update();
@@ -786,13 +740,6 @@ void Game::initSword() {
 }
 
 void Game::updateSword() {
-    // Debug output for tracking
-    static bool lastSwingState = false;
-    if (sword.isSwinging != lastSwingState) {
-        std::cout << "Sword swing state changed: " << (sword.isSwinging ? "Started" : "Finished") << std::endl;
-        lastSwingState = sword.isSwinging;
-    }
-    
     // Update sword cooldown timer
     if (sword.cooldownTimer > 0) {
         sword.cooldownTimer -= deltaTime;
@@ -801,98 +748,65 @@ void Game::updateSword() {
         }
     }
     
-    // Base angle for the sword's orbit around player
-    float baseAngle = glfwGetTime() * 0.4f; // Even slower orbit around player when idle
+    // Simple, reliable sword positioning
+    float currentTime = static_cast<float>(glfwGetTime());
     
-    // If not swinging, keep sword floating outward from player
+    // If not swinging, sword orbits around player
     if (!sword.isSwinging) {
-        sword.angle = baseAngle;
-        // Keep sword at a fixed distance outward from the player (2.5x player radius)
-        float distanceFromPlayer = player->radius * 2.5f;
-        sword.offsetX = cos(baseAngle) * distanceFromPlayer;
-        sword.offsetY = sin(baseAngle) * distanceFromPlayer;
+        // Simple orbital motion
+        float orbitAngle = currentTime * 0.5f; // Slow orbit
+        float orbitDistance = player->radius * 2.5f;
         
-        // Debug: Periodically report sword position when idle
-        static float lastReportTime = 0.0f;
-        float currentTime = static_cast<float>(glfwGetTime());
-        if (currentTime - lastReportTime > 3.0f) {
-            std::cout << "Idle sword position: " << sword.offsetX << ", " << sword.offsetY << std::endl;
-            lastReportTime = currentTime;
-        }
+        sword.offsetX = cos(orbitAngle) * orbitDistance;
+        sword.offsetY = sin(orbitAngle) * orbitDistance;
+        sword.angle = orbitAngle;
     }
-    // If swinging, update the swing animation - slow 90-degree rotation followed by local rotation
+    // If swinging, do simple attack animation
     else {
-        // Use deltaTime to make animation speed consistent across different frame rates
+        // Simple progress increment
         sword.swingProgress += sword.swingSpeed * deltaTime * 60.0f;
         
-        // Debug output to track progress
-        if (sword.swingProgress > 0.95f) {
-            std::cout << "Swing nearly complete: " << sword.swingProgress << std::endl;
-        }
-        
-        // If swing animation is complete
+        // If animation is complete, reset everything
         if (sword.swingProgress >= 1.0f) {
-            // Important: Reset swing state properly
+            // Reset to normal state
             sword.isSwinging = false;
             sword.swingProgress = 0.0f;
             sword.cooldownTimer = sword.cooldown;
             
-            // CRITICAL FIX: Explicitly reset sword position based on current time
-            // The issue was likely that we were saving the initial baseAngle at the start
-            // but using a new baseAngle when resetting, causing a jump in position
-            // Get fresh baseAngle for consistent positioning
-            float currentBaseAngle = glfwGetTime() * 0.4f;
-            float distanceFromPlayer = player->radius * 2.5f;
-            sword.offsetX = cos(currentBaseAngle) * distanceFromPlayer;
-            sword.offsetY = sin(currentBaseAngle) * distanceFromPlayer;
-            sword.angle = currentBaseAngle;
+            // Immediately set to current orbital position
+            float orbitAngle = currentTime * 0.5f;
+            float orbitDistance = player->radius * 2.5f;
+            sword.offsetX = cos(orbitAngle) * orbitDistance;
+            sword.offsetY = sin(orbitAngle) * orbitDistance;
+            sword.angle = orbitAngle;
             
-            // Debug: Log when swing completes with position details
-            std::cout << "Swing reset complete. New position: " << sword.offsetX << ", " << sword.offsetY << std::endl;
-        } else {
-            // For the attack animation - make each phase much longer:
-            // 1. First 30% of animation: 90-degree rotation to starting position (slower)
-            // 2. Middle 40% of animation: Local rotation (360 degrees - just one rotation)
-            // 3. Final 30% of animation: Return to original position (slower)
+            std::cout << "Sword attack finished, reset to orbit" << std::endl;
+        }
+        else {
+            // Simple 3-phase attack animation
+            float attackDistance = player->radius * 1.8f; // Closer during attack
             
-            // Store swing start angle on first frame
-            static float startAngle = 0.0f;
-            if (sword.swingProgress <= sword.swingSpeed) {
-                startAngle = sword.angle;
-                std::cout << "Swing started with angle: " << startAngle << std::endl;
+            if (sword.swingProgress < 0.33f) {
+                // Phase 1: Move to attack position (33% of animation)
+                float phase1 = sword.swingProgress / 0.33f;
+                float startAngle = sword.angle;
+                float targetAngle = startAngle + (3.14159f / 2.0f); // 90 degrees
+                
+                float currentAngle = startAngle + (targetAngle - startAngle) * phase1;
+                sword.offsetX = cos(currentAngle) * attackDistance;
+                sword.offsetY = sin(currentAngle) * attackDistance;
+                sword.angle = currentAngle;
             }
-            
-            float currentSwingAngle;
-            float distanceFromPlayer;
-            
-            if (sword.swingProgress < 0.3f) {
-                // First phase: slow 90-degree rotation to get into position
-                float phase1Progress = sword.swingProgress / 0.3f; // Normalize to 0-1 for this phase
-                currentSwingAngle = startAngle + (3.14159f / 2.0f) * phase1Progress;
-                // Move slightly closer to player as we prepare to swing
-                distanceFromPlayer = player->radius * (2.5f - 0.5f * phase1Progress);
-            } else if (sword.swingProgress < 0.7f) {
-                // Second phase: Local rotation (just one 360 degree rotation, not two)
-                float phase2Progress = (sword.swingProgress - 0.3f) / 0.4f; // Normalize to 0-1 for this phase
-                currentSwingAngle = startAngle + (3.14159f / 2.0f) + (3.14159f * 2.0f * phase2Progress);
-                // Keep sword close to player during rotation
-                distanceFromPlayer = player->radius * 2.0f;
-            } else {
-                // Third phase: Slow return to original position
-                float phase3Progress = (sword.swingProgress - 0.7f) / 0.3f; // Normalize to 0-1 for this phase
-                currentSwingAngle = startAngle + (3.14159f / 2.0f) + (3.14159f * 2.0f) - (3.14159f / 2.0f) * phase3Progress;
-                // Move back to original distance
-                distanceFromPlayer = player->radius * (2.0f + 0.5f * phase3Progress);
-            }
-            
-            // Update sword position based on swing angle
-            sword.angle = currentSwingAngle;
-            sword.offsetX = cos(sword.angle) * distanceFromPlayer;
-            sword.offsetY = sin(sword.angle) * distanceFromPlayer;
-            
-            // Check for hits on enemies during the middle phase of the swing animation
-            if (sword.swingProgress > 0.3f && sword.swingProgress < 0.7f) {
-                // Check for hits on each enemy
+            else if (sword.swingProgress < 0.66f) {
+                // Phase 2: Swing around player (33% of animation)
+                float phase2 = (sword.swingProgress - 0.33f) / 0.33f;
+                float swingAngle = sword.angle + (3.14159f * 2.0f * phase2); // Full circle
+                
+                sword.offsetX = cos(swingAngle) * attackDistance;
+                sword.offsetY = sin(swingAngle) * attackDistance;
+                sword.angle = swingAngle;
+                
+                // Check for enemy hits during this phase
                 for (auto& enemy : enemies) {
                     if (!enemy.isDead) {
                         if (checkSwordHit(enemy.x, enemy.y, enemy.radius)) {
@@ -901,8 +815,28 @@ void Game::updateSword() {
                     }
                 }
             }
+            else {
+                // Phase 3: Return to orbit position (33% of animation)
+                float phase3 = (sword.swingProgress - 0.66f) / 0.34f;
+                float currentAngle = sword.angle;
+                float targetOrbitAngle = currentTime * 0.5f;
+                float targetDistance = player->radius * 2.5f;
+                
+                // Interpolate back to orbit
+                float finalAngle = currentAngle + (targetOrbitAngle - currentAngle) * phase3;
+                float finalDistance = attackDistance + (targetDistance - attackDistance) * phase3;
+                
+                sword.offsetX = cos(finalAngle) * finalDistance;
+                sword.offsetY = sin(finalAngle) * finalDistance;
+                sword.angle = finalAngle;
+            }
         }
     }
+    
+    // Debug output
+    std::cout << "Sword state - Swinging: " << sword.isSwinging 
+              << ", Progress: " << sword.swingProgress 
+              << ", Position: (" << sword.offsetX << ", " << sword.offsetY << ")" << std::endl;
 }
 
 bool Game::checkSwordHit(float targetX, float targetY, float targetRadius) {
@@ -922,54 +856,21 @@ bool Game::checkSwordHit(float targetX, float targetY, float targetRadius) {
 void Game::renderSword() {
     if (player->isDead) return; // Don't render sword if player is dead
     
-    // CRITICAL: Always check if our sword has valid data
-    // This function should never be skipped - the sword must always be visible
-    std::cout << "Rendering sword at: " << player->x + sword.offsetX << ", " << player->y + sword.offsetY << std::endl;
-    
-    // Always make sure we have a valid VAO before rendering
+    // Simple check - if VAO is invalid, reinitialize
     if (swordVAO == 0) {
-        std::cerr << "ERROR: Sword VAO is 0! Reinitializing..." << std::endl;
-        // This shouldn't happen, but we'll reinitialize if needed
         initSword();
-        if (swordVAO == 0) {
-            std::cerr << "CRITICAL ERROR: Failed to initialize sword VAO!" << std::endl;
-            return; // Cannot render without VAO
-        }
-    }
-    
-    // Safety check for position - if the sword is somehow at the origin (0,0) fix it
-    if (std::abs(sword.offsetX) < 0.0001f && std::abs(sword.offsetY) < 0.0001f) {
-        std::cerr << "ERROR: Sword position at origin! Fixing..." << std::endl;
-        float baseAngle = glfwGetTime() * 0.4f;
-        float distanceFromPlayer = player->radius * 2.5f;
-        sword.offsetX = cos(baseAngle) * distanceFromPlayer;
-        sword.offsetY = sin(baseAngle) * distanceFromPlayer;
-        sword.angle = baseAngle;
+        if (swordVAO == 0) return; // Still failed, skip this frame
     }
     
     // Bind the sword VAO
     glBindVertexArray(swordVAO);
     
-    // Set sword color
+    // Set sword color based on state
     if (sword.isSwinging) {
-        // During swing, use a brighter color with pulsing based on swing phase
-        float brightness;
-        if (sword.swingProgress < 0.3f) {
-            // First phase - gradual buildup glow
-            brightness = 0.8f + 0.3f * (sword.swingProgress / 0.3f);
-        } else if (sword.swingProgress < 0.7f) {
-            // Second phase - gentle pulsing during rotation
-            float phase2Progress = (sword.swingProgress - 0.3f) / 0.4f;
-            brightness = 1.1f + 0.2f * sin(phase2Progress * 3.14159f * 3.0f); // Pulse more slowly
-        } else {
-            // Third phase - cooling down
-            float phase3Progress = (sword.swingProgress - 0.7f) / 0.3f;
-            brightness = 1.1f - 0.3f * phase3Progress;
-        }
-        
-        shaderProgram->setVec4("uColor", 0.6f * brightness, 0.7f * brightness, 0.9f * brightness, 1.0f);
+        // Brighter during attack
+        shaderProgram->setVec4("uColor", 0.8f, 0.9f, 1.0f, 1.0f);
     } else {
-        // Normal sword color - steel blue
+        // Normal steel blue
         shaderProgram->setVec4("uColor", 0.6f, 0.7f, 0.9f, 1.0f);
     }
     
@@ -979,133 +880,41 @@ void Game::renderSword() {
     // Position the sword at player position + offset
     model = glm::translate(model, glm::vec3(player->x + sword.offsetX, player->y + sword.offsetY, 0.0f));
     
-    // Rotate the sword
-    float pointingAngle;
-    if (sword.isSwinging && sword.swingProgress >= 0.3f && sword.swingProgress < 0.7f) {
-        // During rotation phase, add spin effect to the sword itself - slower rotation
-        float phase2Progress = (sword.swingProgress - 0.3f) / 0.4f;
-        float spinRotation = phase2Progress * 3.14159f * 2.0f; // One full rotation of the sword itself
-        
-        // Base angle points from player to sword
-        pointingAngle = atan2(sword.offsetY, sword.offsetX) - 3.14159f / 2.0f;
-        
-        // Add spin rotation
-        pointingAngle += spinRotation;
-    } else {
-        // Normal pointing direction when not in rotation phase
-        pointingAngle = atan2(sword.offsetY, sword.offsetX) - 3.14159f / 2.0f;
-    }
-    
+    // Rotate the sword to point outward from player
+    float pointingAngle = atan2(sword.offsetY, sword.offsetX) - 3.14159f / 2.0f;
     model = glm::rotate(model, pointingAngle, glm::vec3(0.0f, 0.0f, 1.0f));
     
     // Apply the model matrix
     shaderProgram->setMat4("uModel", glm::value_ptr(model));
     
-    // Scale effect during swing
-    float scale = 1.0f;
-    if (sword.isSwinging) {
-        if (sword.swingProgress < 0.3f) {
-            // First phase - gradual growth
-            scale = 1.0f + 0.1f * (sword.swingProgress / 0.3f);
-        } else if (sword.swingProgress < 0.7f) {
-            // Second phase - gentle pulsing during rotation
-            float phase2Progress = (sword.swingProgress - 0.3f) / 0.4f;
-            scale = 1.1f + 0.15f * sin(phase2Progress * 3.14159f * 3.0f); // Slower pulsing
-        } else {
-            // Third phase - return to normal
-            float phase3Progress = (sword.swingProgress - 0.7f) / 0.3f;
-            scale = 1.1f - 0.1f * phase3Progress;
-        }
-    }
-    
+    // Simple scale effect during swing
+    float scale = sword.isSwinging ? 1.2f : 1.0f;
     shaderProgram->setFloat("uScale", scale);
     
-    // Draw the sword parts
+    // Draw the sword parts with different colors
     
     // Main blade triangle
-    shaderProgram->setVec4("uColor", 0.7f, 0.8f, 0.95f, 1.0f); // Lighter blade color
+    shaderProgram->setVec4("uColor", 0.7f, 0.8f, 0.95f, 1.0f);
     glDrawArrays(GL_TRIANGLES, 0, 3);
     
     // Blade detail/fuller
-    shaderProgram->setVec4("uColor", 0.5f, 0.6f, 0.8f, 1.0f); // Darker center for depth
+    shaderProgram->setVec4("uColor", 0.5f, 0.6f, 0.8f, 1.0f);
     glDrawArrays(GL_TRIANGLES, 3, 3);
     
     // Guard - gold color
-    shaderProgram->setVec4("uColor", 0.9f, 0.7f, 0.2f, 1.0f); // Gold color
+    shaderProgram->setVec4("uColor", 0.9f, 0.7f, 0.2f, 1.0f);
     glDrawArrays(GL_TRIANGLE_FAN, 6, 4);
     
     // Handle - brown color
-    shaderProgram->setVec4("uColor", 0.6f, 0.3f, 0.1f, 1.0f); // Brown wood color
+    shaderProgram->setVec4("uColor", 0.6f, 0.3f, 0.1f, 1.0f);
     glDrawArrays(GL_TRIANGLE_FAN, 10, 4);
     
     // Pommel - gold to match guard
-    shaderProgram->setVec4("uColor", 0.9f, 0.7f, 0.2f, 1.0f); // Gold color
-    glDrawArrays(GL_TRIANGLE_FAN, 14, 10); // Draw pommel as a triangle fan
+    shaderProgram->setVec4("uColor", 0.9f, 0.7f, 0.2f, 1.0f);
+    glDrawArrays(GL_TRIANGLE_FAN, 14, 10);
     
     // Reset scale
     shaderProgram->setFloat("uScale", 1.0f);
-    
-    // Add trail effects only during the rotation phase, and make them less intense
-    if (sword.isSwinging && sword.swingProgress >= 0.3f && sword.swingProgress < 0.7f) {
-        // Create fewer trail segments for a less cluttered look
-        int numTrails = 3; // Reduced from 5
-        for (int i = 1; i <= numTrails; i++) {
-            float trailOffset = i * 0.05f; // Increased spacing between trails
-            float prevProgress = (sword.swingProgress - 0.3f) / 0.4f - trailOffset;
-            
-            // Skip trails that would be before the start of phase 2
-            if (prevProgress < 0) continue;
-            
-            // Calculate previous position and angle
-            float prevRotation = prevProgress * 3.14159f * 2.0f; // One full rotation
-            float prevAngle = sword.angle - trailOffset * 3.14159f * 2.0f;
-            float prevDistance = player->radius * 2.0f; // During phase 2, distance is constant
-            float prevX = player->x + cos(prevAngle) * prevDistance;
-            float prevY = player->y + sin(prevAngle) * prevDistance;
-            
-            // Calculate previous sword rotation angle
-            float prevPointingAngle = atan2(
-                prevY - player->y, 
-                prevX - player->x
-            ) - 3.14159f / 2.0f + prevRotation;
-            
-            // For each trail segment, draw a simpler, more transparent trail
-            float alpha = 0.08f * (1.0f - (static_cast<float>(i) / numTrails)); // Lower alpha for subtlety
-            
-            std::vector<float> trailVertices = {
-                // Simplified trail - just the tip and edges of the blade
-                prevX, prevY,  // Center point
-                prevX + cos(prevPointingAngle) * sword.length * 0.6f * scale,
-                prevY + sin(prevPointingAngle) * sword.length * 0.6f * scale,
-                prevX + cos(prevPointingAngle + 0.3f) * sword.width * scale * 0.4f,
-                prevY + sin(prevPointingAngle + 0.3f) * sword.width * scale * 0.4f
-            };
-            
-            // Create and bind temporary VBO for trail
-            GLuint trailVBO;
-            glGenBuffers(1, &trailVBO);
-            glBindBuffer(GL_ARRAY_BUFFER, trailVBO);
-            glBufferData(GL_ARRAY_BUFFER, trailVertices.size() * sizeof(float), trailVertices.data(), GL_STATIC_DRAW);
-            
-            glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void*)0);
-            glEnableVertexAttribArray(0);
-            
-            // Set trail color - very subtle blue
-            shaderProgram->setVec4("uColor", 0.6f, 0.7f, 1.0f, alpha);
-            
-            // Enable blending for transparency
-            glEnable(GL_BLEND);
-            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-            
-            // Draw trail as a triangle fan
-            glDrawArrays(GL_TRIANGLE_FAN, 0, 3);
-            
-            // Clean up
-            glDeleteBuffers(1, &trailVBO);
-        }
-        
-        glDisable(GL_BLEND);
-    }
     
     glBindVertexArray(0);
 }

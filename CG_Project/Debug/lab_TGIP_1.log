@@ -1,13 +1,7 @@
 ﻿          1 file(s) copied.
           1 file(s) copied.
   Game.cpp
-C:\Users\Nisipeanu\Documents\GitHub\knighted-circle\Game.cpp(250,36): warning C4244: 'initializing': conversion from 'double' to 'float', possible loss of data
-C:\Users\Nisipeanu\Documents\GitHub\knighted-circle\Game.cpp(280,28): warning C4018: '<': signed/unsigned mismatch
-C:\Users\Nisipeanu\Documents\GitHub\knighted-circle\Game.cpp(326,24): warning C4018: '<': signed/unsigned mismatch
-C:\Users\Nisipeanu\Documents\GitHub\knighted-circle\Game.cpp(561,25): warning C4244: 'initializing': conversion from 'double' to 'float', possible loss of data
-C:\Users\Nisipeanu\Documents\GitHub\knighted-circle\Game.cpp(680,33): warning C4244: 'initializing': conversion from 'double' to 'float', possible loss of data
-C:\Users\Nisipeanu\Documents\GitHub\knighted-circle\Game.cpp(805,21): warning C4244: 'initializing': conversion from 'double' to 'float', possible loss of data
-C:\Users\Nisipeanu\Documents\GitHub\knighted-circle\Game.cpp(844,36): warning C4244: 'initializing': conversion from 'double' to 'float', possible loss of data
-C:\Users\Nisipeanu\Documents\GitHub\knighted-circle\Game.cpp(899,51): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data
-C:\Users\Nisipeanu\Documents\GitHub\knighted-circle\Game.cpp(943,25): warning C4244: 'initializing': conversion from 'double' to 'float', possible loss of data
+C:\Users\Nisipeanu\Documents\GitHub\knighted-circle\Game.cpp(266,28): warning C4018: '<': signed/unsigned mismatch
+C:\Users\Nisipeanu\Documents\GitHub\knighted-circle\Game.cpp(312,24): warning C4018: '<': signed/unsigned mismatch
+C:\Users\Nisipeanu\Documents\GitHub\knighted-circle\Game.cpp(813,51): warning C4244: 'argument': conversion from 'float' to 'int', possible loss of data
   lab_TGIP_1.vcxproj -> C:\Users\Nisipeanu\Documents\GitHub\knighted-circle\Debug\CG_Project.exe
