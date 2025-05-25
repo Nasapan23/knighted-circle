@@ -25,6 +25,7 @@ private:
     void update();
     void render();
     void renderHealthBar();
+    void renderKillCounter();
     void renderEnemyHealthBar(const Enemy& enemy);
     void renderDeathScreen();
     void spawnEnemies(int count);
@@ -108,6 +109,7 @@ private:
     std::vector<Enemy> enemies;
     float enemySpeed;
     int maxEnemies;
+    int totalEnemiesSpawned;  // Track total enemies ever spawned
     float enemySpawnTimer;
     float enemySpawnInterval;
 

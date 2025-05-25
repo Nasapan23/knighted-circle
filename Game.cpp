@@ -31,7 +31,7 @@ Game::Game()
     arrowVAO(0), arrowVBO(0),
     tileVAO(0), tileVBO(0),
     segments(50), baseRadius(0.05f),
-    enemySpeed(0.008f), maxEnemies(4), enemySpawnTimer(0.0f), enemySpawnInterval(4.0f),
+    enemySpeed(0.008f), maxEnemies(4), totalEnemiesSpawned(0), enemySpawnTimer(0.0f), enemySpawnInterval(4.0f),
     arrowActive(false), mouseWasPressed(false),
     arrowSpeed(0.02f), damageTimer(0.0f), damageCooldown(3.0f),
     rightMouseWasPressed(false),
@@ -270,8 +270,9 @@ void Game::spawnEnemies(int count) {
     float aspect = static_cast<float>(screenWidth) / screenHeight;
     
     for (int i = 0; i < count; i++) {
-        // Only spawn if we have less than the maximum number of enemies
-        if (enemies.size() < maxEnemies) {
+        // Only spawn if we have less than the maximum number of enemies AND
+        // haven't spawned the total number needed for the game
+        if (enemies.size() < maxEnemies && totalEnemiesSpawned < enemiesToKill) {
             // Spawn enemies at random positions around the player
             float angle = randomFloat(0, 2 * 3.14159f);
             float distance = randomFloat(1.0f, 1.8f);  // Spawn farther away from the player
@@ -287,6 +288,8 @@ void Game::spawnEnemies(int count) {
             
             // Add new enemy
             enemies.push_back(Enemy(spawnX, spawnY, baseRadius, enemySpeed));
+            totalEnemiesSpawned++;
+            std::cout << "Spawned enemy " << totalEnemiesSpawned << "/" << enemiesToKill << std::endl;
         }
     }
 }
@@ -320,7 +323,7 @@ void Game::update() {
     checkWinCondition();
 
     // Spawn enemies periodically
-    if (enemies.size() < maxEnemies) {
+    if (enemies.size() < maxEnemies && totalEnemiesSpawned < enemiesToKill) {
         enemySpawnTimer += deltaTime;
         if (enemySpawnTimer >= enemySpawnInterval) {
             spawnEnemies(1);  // Spawn one enemy at a time
@@ -383,6 +386,18 @@ void Game::update() {
             if (enemy.checkArrowHit(player->x, player->y, player->radius, damage)) {
                 player->takeDamage(damage);
             }
+        }
+    }
+
+    // Remove dead enemies and count kills
+    auto it = enemies.begin();
+    while (it != enemies.end()) {
+        if (it->isDead) {
+            totalEnemiesKilled++;
+            std::cout << "Enemy killed! Total kills: " << totalEnemiesKilled << "/" << enemiesToKill << std::endl;
+            it = enemies.erase(it);
+        } else {
+            ++it;
         }
     }
 
@@ -650,6 +665,14 @@ void Game::render() {
     if (player->isDead) {
         renderDeathScreen();
     }
+    
+    // Draw win screen if game is won
+    if (gameWon) {
+        renderWinScreen();
+    }
+
+    // Render kill counter
+    renderKillCounter();
 
     glfwSwapBuffers(window);
 }
@@ -1327,5 +1350,93 @@ void Game::renderTerrain() {
 }
 
 void Game::checkWinCondition() {
-    // Implementation of checkWinCondition method
+    // Check if we've killed enough enemies to win
+    if (!gameWon && totalEnemiesKilled >= enemiesToKill) {
+        gameWon = true;
+        winTime = static_cast<float>(glfwGetTime());
+        std::cout << "Victory! You killed " << totalEnemiesKilled << " enemies!" << std::endl;
+    }
+}
+
+void Game::renderWinScreen() {
+    // Bind the rectangle VAO
+    glBindVertexArray(rectVAO);
+    
+    // Fill the screen with green overlay
+    float aspect = static_cast<float>(screenWidth) / screenHeight;
+    shaderProgram->setVec4("uColor", 0.0f, 0.3f, 0.0f, 0.7f); // Semi-transparent green
+    
+    glm::mat4 model = glm::mat4(1.0f);
+    model = glm::translate(model, glm::vec3(-aspect, -1.0f, 0.0f)); // Bottom-left corner
+    model = glm::scale(model, glm::vec3(2.0f * aspect, 2.0f, 1.0f)); // Scale to fill screen
+    shaderProgram->setMat4("uModel", glm::value_ptr(model));
+    
+    // Enable blending for transparent overlay
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+    
+    // Render text with proper font rendering
+    if (gameFont) {
+        // Center "VICTORY!" text on screen
+        const std::string victoryMessage = "VICTORY!";
+        float textScale = 2.5f;
+        
+        // Calculate width of text (approximate)
+        float textWidth = victoryMessage.length() * 20.0f * textScale;
+        
+        // Position text in center of screen
+        float textX = (screenWidth - textWidth) / 2.0f;
+        float textY = screenHeight / 2.0f + 50.0f;
+        
+        // Draw "VICTORY!" text - gold color
+        gameFont->renderText(victoryMessage, textX, textY, textScale, glm::vec3(1.0f, 0.8f, 0.0f));
+        
+        // Draw kill count below
+        std::string killMessage = "Enemies Defeated: " + std::to_string(totalEnemiesKilled);
+        float killScale = 1.5f;
+        
+        // Position kill count text below main message
+        float killWidth = killMessage.length() * 10.0f * killScale;
+        float killX = (screenWidth - killWidth) / 2.0f;
+        float killY = textY - 80.0f;
+        
+        gameFont->renderText(killMessage, killX, killY, killScale, glm::vec3(1.0f, 1.0f, 1.0f));
+        
+        // Draw instruction text below
+        const std::string exitMessage = "Press ESC to exit";
+        float instructionScale = 1.0f;
+        
+        // Position instruction text below kill count
+        float instructionWidth = exitMessage.length() * 10.0f * instructionScale;
+        float instructionX = (screenWidth - instructionWidth) / 2.0f;
+        float instructionY = killY - 50.0f;
+        
+        gameFont->renderText(exitMessage, instructionX, instructionY, instructionScale, glm::vec3(0.9f, 0.9f, 0.9f));
+    }
+    
+    // Disable blending
+    glDisable(GL_BLEND);
+    
+    glBindVertexArray(0);
+}
+
+void Game::renderKillCounter() {
+    if (gameFont) {
+        // Create kill counter text
+        std::string killText = "Kills: " + std::to_string(totalEnemiesKilled) + "/" + std::to_string(enemiesToKill);
+        float textScale = 1.0f;
+        
+        // Calculate text width (approximate)
+        float textWidth = killText.length() * 12.0f * textScale;
+        
+        // Position in top right corner with padding
+        float aspect = static_cast<float>(screenWidth) / screenHeight;
+        float textX = screenWidth - textWidth - 20.0f; // 20px padding from right edge
+        float textY = screenHeight - 30.0f; // 30px from top
+        
+        // Draw kill counter - white color
+        gameFont->renderText(killText, textX, textY, textScale, glm::vec3(1.0f, 1.0f, 1.0f));
+    }
 }
