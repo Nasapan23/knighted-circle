@@ -15,6 +15,10 @@ public:
     float invulnerabilityDuration;
     bool isDead;
     float timeOfDeath;
+    
+    // Collision properties
+    float collisionRadius;
+    float pushForce;
 
     // Constructor: starting position, radius, and speed.
     Player(float startX, float startY, float rad, float spd);
@@ -23,6 +27,10 @@ public:
     void heal(int amount);
     float getHealthPercentage() const;
     void die();
+    
+    // Collision handling
+    void handleCollision(float otherX, float otherY, float otherRadius, float deltaTime);
+    bool isColliding(float otherX, float otherY, float otherRadius) const;
 };
 
 #endif

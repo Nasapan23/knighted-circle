@@ -29,7 +29,7 @@ Game::Game()
     rectVAO(0), rectVBO(0),
     swordVAO(0), swordVBO(0),
     segments(50), baseRadius(0.05f),
-    enemySpeed(0.005f), maxEnemies(3), enemySpawnTimer(0.0f), enemySpawnInterval(5.0f),
+    enemySpeed(0.008f), maxEnemies(4), enemySpawnTimer(0.0f), enemySpawnInterval(4.0f),
     arrowActive(false), mouseWasPressed(false),
     arrowSpeed(0.02f), damageTimer(0.0f), damageCooldown(3.0f),
     rightMouseWasPressed(false),
@@ -173,7 +173,7 @@ bool Game::init() {
     player = new Player(0.0f, 0.0f, baseRadius, 0.001f);
 
     // Create initial enemies
-    spawnEnemies(3);  // Start with 3 enemies
+    spawnEnemies(2);  // Start with 2 smart enemies instead of 3
 
     arrowActive = false;
     mouseWasPressed = false;
@@ -346,11 +346,35 @@ void Game::update() {
         // Update enemy with deltaTime
         enemy.update(player->x, player->y, deltaTime);
         
+        // Handle collision with player (both directions)
+        if (!player->isDead && !enemy.isDead) {
+            enemy.handleCollision(player->x, player->y, player->radius, deltaTime);
+            player->handleCollision(enemy.x, enemy.y, enemy.radius, deltaTime);
+            
+            // Check for melee attacks on player
+            if (!player->isInvulnerable) {
+                int meleeDamage = 0;
+                if (enemy.checkMeleeHit(player->x, player->y, player->radius, meleeDamage)) {
+                    player->takeDamage(meleeDamage);
+                }
+            }
+        }
+        
         // Check if any enemy arrows hit the player
         if (!player->isDead && !player->isInvulnerable) {
             int damage = 0;
             if (enemy.checkArrowHit(player->x, player->y, player->radius, damage)) {
                 player->takeDamage(damage);
+            }
+        }
+    }
+
+    // Handle enemy-to-enemy collisions
+    for (size_t i = 0; i < enemies.size(); i++) {
+        for (size_t j = i + 1; j < enemies.size(); j++) {
+            if (!enemies[i].isDead && !enemies[j].isDead) {
+                enemies[i].handleCollision(enemies[j].x, enemies[j].y, enemies[j].radius, deltaTime);
+                enemies[j].handleCollision(enemies[i].x, enemies[i].y, enemies[i].radius, deltaTime);
             }
         }
     }
@@ -551,8 +575,28 @@ void Game::render() {
     // Draw all enemies and their arrows
     for (const auto& enemy : enemies) {
         if (!enemy.isDead) {
-            // Draw enemy (red circle)
-            shaderProgram->setVec4("uColor", 0.8f, 0.2f, 0.2f, 1.0f); // Red color for enemy
+            // Set enemy color based on AI state
+            switch (enemy.currentState) {
+                case Enemy::WANDERING:
+                    shaderProgram->setVec4("uColor", 0.6f, 0.4f, 0.4f, 1.0f); // Dark red (idle)
+                    break;
+                case Enemy::DETECTING:
+                    shaderProgram->setVec4("uColor", 0.9f, 0.6f, 0.2f, 1.0f); // Orange (searching)
+                    break;
+                case Enemy::FOLLOWING:
+                    shaderProgram->setVec4("uColor", 0.8f, 0.3f, 0.3f, 1.0f); // Red (following)
+                    break;
+                case Enemy::ATTACKING:
+                    shaderProgram->setVec4("uColor", 1.0f, 0.2f, 0.2f, 1.0f); // Bright red (attacking)
+                    break;
+                case Enemy::FLEEING:
+                    shaderProgram->setVec4("uColor", 0.7f, 0.2f, 0.8f, 1.0f); // Purple (fleeing)
+                    break;
+                default:
+                    shaderProgram->setVec4("uColor", 0.8f, 0.2f, 0.2f, 1.0f); // Default red
+                    break;
+            }
+            
             model = glm::mat4(1.0f);
             model = glm::translate(model, glm::vec3(enemy.x, enemy.y, 0.0f));
             model = glm::scale(model, glm::vec3(enemy.radius / baseRadius, enemy.radius / baseRadius, 1.0f));
