@@ -28,11 +28,14 @@ Game::Game()
     circleVAO(0), circleVBO(0),
     rectVAO(0), rectVBO(0),
     swordVAO(0), swordVBO(0),
+    arrowVAO(0), arrowVBO(0),
+    tileVAO(0), tileVBO(0),
     segments(50), baseRadius(0.05f),
     enemySpeed(0.008f), maxEnemies(4), enemySpawnTimer(0.0f), enemySpawnInterval(4.0f),
     arrowActive(false), mouseWasPressed(false),
     arrowSpeed(0.02f), damageTimer(0.0f), damageCooldown(3.0f),
     rightMouseWasPressed(false),
+    terrainGenerated(false),
     deathScreenTimeout(3.0f), lastFrameTime(0.0), deltaTime(0.0f)
 {
     // Initialize sword parameters - simplified
@@ -200,6 +203,8 @@ bool Game::init() {
 
     // Initialize the sword
     initSword();
+    initArrow();
+    initTerrain();
     std::cout << "Sword initialized with VAO ID: " << swordVAO << std::endl;
 
     return true;
@@ -234,6 +239,8 @@ void Game::processInput() {
             arrow.vx = arrowSpeed * dirX;
             arrow.vy = arrowSpeed * dirY;
             arrow.radius = baseRadius * 0.2f;
+            // Calculate arrow rotation angle based on direction
+            arrow.angle = atan2(dirY, dirX) - 3.14159f / 2.0f; // Subtract 90 degrees since arrow points up by default
             arrowActive = true;
             mouseWasPressed = true;
         }
@@ -321,6 +328,12 @@ void Game::update() {
     if (arrowActive) {
         arrow.x += arrow.vx * deltaTime * 60.0f;
         arrow.y += arrow.vy * deltaTime * 60.0f;
+        
+        // Continuously update arrow angle based on current velocity direction
+        if (arrow.vx != 0.0f || arrow.vy != 0.0f) {
+            arrow.angle = atan2(arrow.vy, arrow.vx) - 3.14159f / 2.0f;
+        }
+        
         float aspect = static_cast<float>(screenWidth) / screenHeight;
         if (arrow.x < -aspect + arrow.radius || arrow.x > aspect - arrow.radius ||
             arrow.y < -1.0f + arrow.radius || arrow.y > 1.0f - arrow.radius)
@@ -523,10 +536,13 @@ void Game::renderDeathScreen() {
 }
 
 void Game::render() {
-    glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f); // Black background
     glClear(GL_COLOR_BUFFER_BIT);
     shaderProgram->use();
     shaderProgram->setMat4("uProjection", glm::value_ptr(projection));
+
+    // Render background tiles first
+    renderTerrain();
 
     // Set up for player rendering
     glm::mat4 model = glm::mat4(1.0f);
@@ -560,17 +576,8 @@ void Game::render() {
     // Render the sword
     renderSword();
 
-    // Draw player arrow (yellow circle)
-    if (arrowActive && !player->isDead) {  // Don't show arrow if player is dead
-        shaderProgram->setVec4("uColor", 1.0f, 1.0f, 0.0f, 1.0f);
-        model = glm::mat4(1.0f);
-        model = glm::translate(model, glm::vec3(arrow.x, arrow.y, 0.0f));
-        model = glm::scale(model, glm::vec3(arrow.radius / baseRadius, arrow.radius / baseRadius, 1.0f));
-        shaderProgram->setMat4("uModel", glm::value_ptr(model));
-        glBindVertexArray(circleVAO);
-        glDrawArrays(GL_TRIANGLE_FAN, 0, segments + 2);
-        glBindVertexArray(0);
-    }
+    // Render player arrow with proper arrow shape
+    renderArrow();
 
     // Draw all enemies and their arrows
     for (const auto& enemy : enemies) {
@@ -670,6 +677,10 @@ void Game::cleanup() {
     glDeleteBuffers(1, &rectVBO);
     glDeleteVertexArrays(1, &swordVAO);
     glDeleteBuffers(1, &swordVBO);
+    glDeleteVertexArrays(1, &arrowVAO);
+    glDeleteBuffers(1, &arrowVBO);
+    glDeleteVertexArrays(1, &tileVAO);
+    glDeleteBuffers(1, &tileVBO);
     glfwDestroyWindow(window);
     glfwTerminate();
 }
@@ -775,6 +786,78 @@ void Game::initSword() {
     glBindVertexArray(swordVAO);
     glBindBuffer(GL_ARRAY_BUFFER, swordVBO);
     glBufferData(GL_ARRAY_BUFFER, swordVertices.size() * sizeof(float), swordVertices.data(), GL_STATIC_DRAW);
+    
+    // Our vertices are 2 floats per vertex (x, y)
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(0);
+    
+    glBindVertexArray(0);
+}
+
+void Game::initArrow() {
+    // Create vertices for a 2D arrow shape
+    arrowVertices.clear();
+    
+    // Define arrow relative to origin (0,0), pointing upward (positive Y direction)
+    // Make arrow much smaller
+    float arrowLength = baseRadius * 1.5f;  // Much smaller - was 4.0f
+    float headLength = arrowLength * 0.4f;  // 40% of length is the arrowhead
+    float shaftLength = arrowLength * 0.6f; // 60% of length is the shaft
+    float headWidth = baseRadius * 0.6f;    // Much smaller width - was 1.5f
+    float shaftWidth = baseRadius * 0.15f;  // Much thinner shaft - was 0.3f
+    float fletchingLength = arrowLength * 0.25f; // Length of fletching
+    float fletchingWidth = baseRadius * 0.4f;   // Smaller fletching - was 0.8f
+    
+    // Arrowhead (triangle pointing up)
+    arrowVertices.push_back(0.0f);                    // Tip x
+    arrowVertices.push_back(arrowLength);             // Tip y
+    
+    arrowVertices.push_back(-headWidth/2.0f);         // Left base x
+    arrowVertices.push_back(arrowLength - headLength); // Left base y
+    
+    arrowVertices.push_back(headWidth/2.0f);          // Right base x
+    arrowVertices.push_back(arrowLength - headLength); // Right base y
+    
+    // Arrow shaft (rectangle)
+    arrowVertices.push_back(-shaftWidth/2.0f);        // Shaft left x
+    arrowVertices.push_back(arrowLength - headLength); // Shaft top y
+    
+    arrowVertices.push_back(shaftWidth/2.0f);         // Shaft right x
+    arrowVertices.push_back(arrowLength - headLength); // Shaft top y
+    
+    arrowVertices.push_back(shaftWidth/2.0f);         // Shaft right x
+    arrowVertices.push_back(fletchingLength);         // Shaft bottom y
+    
+    arrowVertices.push_back(-shaftWidth/2.0f);        // Shaft left x
+    arrowVertices.push_back(fletchingLength);         // Shaft bottom y
+    
+    // Fletching (feathers at the back) - left side
+    arrowVertices.push_back(-shaftWidth/2.0f);        // Fletching start left x
+    arrowVertices.push_back(fletchingLength);         // Fletching start y
+    
+    arrowVertices.push_back(-fletchingWidth/2.0f);    // Fletching end left x
+    arrowVertices.push_back(0.0f);                    // Fletching end y
+    
+    arrowVertices.push_back(-shaftWidth/4.0f);        // Fletching middle x
+    arrowVertices.push_back(fletchingLength * 0.5f);  // Fletching middle y
+    
+    // Fletching (feathers at the back) - right side
+    arrowVertices.push_back(shaftWidth/2.0f);         // Fletching start right x
+    arrowVertices.push_back(fletchingLength);         // Fletching start y
+    
+    arrowVertices.push_back(fletchingWidth/2.0f);     // Fletching end right x
+    arrowVertices.push_back(0.0f);                    // Fletching end y
+    
+    arrowVertices.push_back(shaftWidth/4.0f);         // Fletching middle x
+    arrowVertices.push_back(fletchingLength * 0.5f);  // Fletching middle y
+    
+    // Set up VAO and VBO for arrow
+    glGenVertexArrays(1, &arrowVAO);
+    glGenBuffers(1, &arrowVBO);
+    
+    glBindVertexArray(arrowVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, arrowVBO);
+    glBufferData(GL_ARRAY_BUFFER, arrowVertices.size() * sizeof(float), arrowVertices.data(), GL_STATIC_DRAW);
     
     // Our vertices are 2 floats per vertex (x, y)
     glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void*)0);
@@ -959,6 +1042,282 @@ void Game::renderSword() {
     
     // Reset scale
     shaderProgram->setFloat("uScale", 1.0f);
+    
+    glBindVertexArray(0);
+}
+
+void Game::renderArrow() {
+    if (!arrowActive || player->isDead) return; // Don't render if arrow is not active or player is dead
+    
+    // Simple check - if VAO is invalid, reinitialize
+    if (arrowVAO == 0) {
+        initArrow();
+        if (arrowVAO == 0) return; // Still failed, skip this frame
+    }
+    
+    // Bind the arrow VAO
+    glBindVertexArray(arrowVAO);
+    
+    // Create model matrix for arrow
+    glm::mat4 model = glm::mat4(1.0f);
+    
+    // Position the arrow at its current location
+    model = glm::translate(model, glm::vec3(arrow.x, arrow.y, 0.0f));
+    
+    // Rotate the arrow to point in its direction of travel
+    model = glm::rotate(model, arrow.angle, glm::vec3(0.0f, 0.0f, 1.0f));
+    
+    // Scale the arrow to be much smaller
+    float arrowScale = 0.4f; // Much smaller scale - was 0.8f
+    model = glm::scale(model, glm::vec3(arrowScale, arrowScale, 1.0f));
+    
+    // Apply the model matrix
+    shaderProgram->setMat4("uModel", glm::value_ptr(model));
+    
+    // Draw the arrow parts with different colors
+    
+    // Arrowhead (metallic silver/gray)
+    shaderProgram->setVec4("uColor", 0.8f, 0.8f, 0.9f, 1.0f);
+    glDrawArrays(GL_TRIANGLES, 0, 3);
+    
+    // Arrow shaft (brown wood color)
+    shaderProgram->setVec4("uColor", 0.6f, 0.4f, 0.2f, 1.0f);
+    glDrawArrays(GL_TRIANGLE_FAN, 3, 4);
+    
+    // Fletching left (feather color - reddish brown)
+    shaderProgram->setVec4("uColor", 0.7f, 0.3f, 0.2f, 1.0f);
+    glDrawArrays(GL_TRIANGLES, 7, 3);
+    
+    // Fletching right (feather color - reddish brown)
+    shaderProgram->setVec4("uColor", 0.7f, 0.3f, 0.2f, 1.0f);
+    glDrawArrays(GL_TRIANGLES, 10, 3);
+    
+    glBindVertexArray(0);
+}
+
+void Game::initTerrain() {
+    // Create a simple rectangle for terrain element rendering
+    tileVertices = {
+        // positions (x, y) for a unit square
+        0.0f, 0.0f,  // bottom left
+        1.0f, 0.0f,  // bottom right
+        1.0f, 1.0f,  // top right
+        0.0f, 0.0f,  // bottom left
+        1.0f, 1.0f,  // top right
+        0.0f, 1.0f   // top left
+    };
+    
+    // Set up VAO and VBO for terrain elements
+    glGenVertexArrays(1, &tileVAO);
+    glGenBuffers(1, &tileVBO);
+    
+    glBindVertexArray(tileVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, tileVBO);
+    glBufferData(GL_ARRAY_BUFFER, tileVertices.size() * sizeof(float), tileVertices.data(), GL_STATIC_DRAW);
+    
+    // Our vertices are 2 floats per vertex (x, y)
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(0);
+    
+    glBindVertexArray(0);
+    
+    // Generate the scattered terrain elements
+    generateTerrain();
+}
+
+void Game::generateTerrain() {
+    if (terrainGenerated) return;
+    
+    // Calculate world bounds
+    float aspect = static_cast<float>(screenWidth) / screenHeight;
+    float worldWidth = 2.0f * aspect;
+    float worldHeight = 2.0f;
+    
+    // Clear any existing terrain elements
+    terrainElements.clear();
+    
+    // Generate scattered terrain elements
+    int numElements = 150; // Total number of terrain elements to scatter
+    
+    for (int i = 0; i < numElements; i++) {
+        TerrainElement element;
+        
+        // Random position across the world
+        element.x = randomFloat(-aspect + 0.1f, aspect - 0.1f);
+        element.y = randomFloat(-1.0f + 0.1f, 1.0f - 0.1f);
+        
+        // Check for overlap with existing elements (minimum distance)
+        bool tooClose = false;
+        float minDistance = 0.15f; // Minimum distance between elements
+        
+        for (const auto& existing : terrainElements) {
+            float dx = element.x - existing.x;
+            float dy = element.y - existing.y;
+            float distance = sqrt(dx * dx + dy * dy);
+            
+            if (distance < minDistance) {
+                tooClose = true;
+                break;
+            }
+        }
+        
+        // Skip this element if it's too close to another
+        if (tooClose) {
+            i--; // Try again
+            continue;
+        }
+        
+        // Random element type
+        int typeRand = rand() % 100;
+        if (typeRand < 35) {
+            element.type = GRASS_BLADE;
+            element.size = randomFloat(0.02f, 0.04f);
+        } else if (typeRand < 55) {
+            element.type = STONE_ROCK;
+            element.size = randomFloat(0.03f, 0.06f);
+        } else if (typeRand < 75) {
+            element.type = DIRT_PATCH;
+            element.size = randomFloat(0.025f, 0.045f);
+        } else if (typeRand < 90) {
+            element.type = COBBLE_STONE;
+            element.size = randomFloat(0.04f, 0.07f);
+        } else {
+            element.type = SAND_GRAIN;
+            element.size = randomFloat(0.015f, 0.025f);
+        }
+        
+        // Random rotation for variety
+        element.rotation = randomFloat(0.0f, 6.28318f); // 0 to 2π
+        
+        // Grayscale colors with variation
+        float baseGray = 0.0f;
+        float variation = randomFloat(0.7f, 1.0f);
+        
+        switch (element.type) {
+            case GRASS_BLADE:
+                baseGray = 0.4f * variation; // Medium gray
+                break;
+            case STONE_ROCK:
+                baseGray = 0.6f * variation; // Light gray
+                break;
+            case DIRT_PATCH:
+                baseGray = 0.3f * variation; // Dark gray
+                break;
+            case COBBLE_STONE:
+                baseGray = 0.5f * variation; // Medium-light gray
+                break;
+            case SAND_GRAIN:
+                baseGray = 0.7f * variation; // Lightest gray
+                break;
+        }
+        
+        element.color = glm::vec3(baseGray, baseGray, baseGray);
+        element.rendered = false; // Will be rendered once and then marked as rendered
+        
+        terrainElements.push_back(element);
+    }
+    
+    terrainGenerated = true;
+    std::cout << "Generated " << static_cast<int>(terrainElements.size()) << " scattered terrain elements" << std::endl;
+}
+
+void Game::renderTerrain() {
+    if (!terrainGenerated || tileVAO == 0) return;
+    
+    // Bind the terrain VAO
+    glBindVertexArray(tileVAO);
+    
+    // Render all terrain elements
+    for (auto& element : terrainElements) {
+        // Set element color
+        shaderProgram->setVec4("uColor", element.color.r, element.color.g, element.color.b, 1.0f);
+        
+        // Create model matrix for this element
+        glm::mat4 model = glm::mat4(1.0f);
+        model = glm::translate(model, glm::vec3(element.x, element.y, 0.0f));
+        model = glm::rotate(model, element.rotation, glm::vec3(0.0f, 0.0f, 1.0f));
+        
+        // Draw different shapes based on element type
+        switch (element.type) {
+            case GRASS_BLADE:
+            {
+                // Draw thin vertical rectangle for grass blade
+                glm::mat4 grassModel = model;
+                grassModel = glm::scale(grassModel, glm::vec3(element.size * 0.3f, element.size * 2.0f, 1.0f));
+                shaderProgram->setMat4("uModel", glm::value_ptr(grassModel));
+                glDrawArrays(GL_TRIANGLES, 0, 6);
+                break;
+            }
+                
+            case STONE_ROCK:
+            {
+                // Draw irregular stone shape (multiple small rectangles)
+                glm::mat4 stoneModel = model;
+                stoneModel = glm::scale(stoneModel, glm::vec3(element.size, element.size * 0.8f, 1.0f));
+                shaderProgram->setMat4("uModel", glm::value_ptr(stoneModel));
+                glDrawArrays(GL_TRIANGLES, 0, 6);
+                
+                // Add a smaller rectangle for irregular shape
+                glm::mat4 model2 = glm::mat4(1.0f);
+                model2 = glm::translate(model2, glm::vec3(element.x + element.size * 0.3f, element.y + element.size * 0.2f, 0.0f));
+                model2 = glm::rotate(model2, element.rotation + 0.5f, glm::vec3(0.0f, 0.0f, 1.0f));
+                model2 = glm::scale(model2, glm::vec3(element.size * 0.6f, element.size * 0.5f, 1.0f));
+                shaderProgram->setMat4("uModel", glm::value_ptr(model2));
+                glDrawArrays(GL_TRIANGLES, 0, 6);
+                break;
+            }
+                
+            case DIRT_PATCH:
+            {
+                // Draw small square for dirt patch
+                glm::mat4 dirtModel = model;
+                dirtModel = glm::scale(dirtModel, glm::vec3(element.size, element.size, 1.0f));
+                shaderProgram->setMat4("uModel", glm::value_ptr(dirtModel));
+                glDrawArrays(GL_TRIANGLES, 0, 6);
+                break;
+            }
+                
+            case COBBLE_STONE:
+            {
+                // Draw rectangular cobblestone
+                glm::mat4 cobbleModel = model;
+                cobbleModel = glm::scale(cobbleModel, glm::vec3(element.size * 1.2f, element.size * 0.8f, 1.0f));
+                shaderProgram->setMat4("uModel", glm::value_ptr(cobbleModel));
+                glDrawArrays(GL_TRIANGLES, 0, 6);
+                
+                // Add border lines for cobblestone effect
+                float darkGray = element.color.r * 0.5f;
+                shaderProgram->setVec4("uColor", darkGray, darkGray, darkGray, 1.0f);
+                
+                // Top border
+                glm::mat4 borderModel = glm::mat4(1.0f);
+                borderModel = glm::translate(borderModel, glm::vec3(element.x, element.y + element.size * 0.4f, 0.0f));
+                borderModel = glm::rotate(borderModel, element.rotation, glm::vec3(0.0f, 0.0f, 1.0f));
+                borderModel = glm::scale(borderModel, glm::vec3(element.size * 1.2f, element.size * 0.05f, 1.0f));
+                shaderProgram->setMat4("uModel", glm::value_ptr(borderModel));
+                glDrawArrays(GL_TRIANGLES, 0, 6);
+                
+                // Side border
+                borderModel = glm::mat4(1.0f);
+                borderModel = glm::translate(borderModel, glm::vec3(element.x + element.size * 0.6f, element.y, 0.0f));
+                borderModel = glm::rotate(borderModel, element.rotation, glm::vec3(0.0f, 0.0f, 1.0f));
+                borderModel = glm::scale(borderModel, glm::vec3(element.size * 0.05f, element.size * 0.8f, 1.0f));
+                shaderProgram->setMat4("uModel", glm::value_ptr(borderModel));
+                glDrawArrays(GL_TRIANGLES, 0, 6);
+                break;
+            }
+                
+            case SAND_GRAIN:
+            {
+                // Draw tiny square for sand grain
+                glm::mat4 sandModel = model;
+                sandModel = glm::scale(sandModel, glm::vec3(element.size, element.size, 1.0f));
+                shaderProgram->setMat4("uModel", glm::value_ptr(sandModel));
+                glDrawArrays(GL_TRIANGLES, 0, 6);
+                break;
+            }
+        }
+    }
     
     glBindVertexArray(0);
 }

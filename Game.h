@@ -35,6 +35,15 @@ private:
     void renderSword();
     bool checkSwordHit(float targetX, float targetY, float targetRadius);
     
+    // Arrow rendering functions
+    void initArrow();
+    void renderArrow();
+    
+    // Terrain system functions
+    void initTerrain();
+    void generateTerrain();
+    void renderTerrain();
+    
     // Timing variables
     double lastFrameTime;
     float deltaTime;
@@ -57,6 +66,35 @@ private:
     // For drawing the sword
     GLuint swordVAO, swordVBO;
     std::vector<float> swordVertices;
+    
+    // For drawing arrows
+    GLuint arrowVAO, arrowVBO;
+    std::vector<float> arrowVertices;
+
+    // For drawing background tiles
+    GLuint tileVAO, tileVBO;
+    std::vector<float> tileVertices;
+    
+    // Tile system
+    enum TileType {
+        GRASS_BLADE = 0,
+        STONE_ROCK = 1,
+        DIRT_PATCH = 2,
+        COBBLE_STONE = 3,
+        SAND_GRAIN = 4
+    };
+    
+    struct TerrainElement {
+        TileType type;
+        float x, y;
+        float size;
+        float rotation; // For variety
+        glm::vec3 color;
+        bool rendered; // To avoid re-rendering static elements
+    };
+    
+    std::vector<TerrainElement> terrainElements;
+    bool terrainGenerated;
 
     glm::mat4 projection; // Orthographic projection matrix
     glm::mat4 textProjection; // Orthographic projection for text (in screen coordinates)
@@ -74,6 +112,7 @@ private:
         float x, y;
         float vx, vy;
         float radius;
+        float angle;  // Rotation angle for proper arrow orientation
     } arrow;
     bool arrowActive;
     bool mouseWasPressed;
