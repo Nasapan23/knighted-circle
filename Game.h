@@ -44,6 +44,10 @@ private:
     void generateTerrain();
     void renderTerrain();
     
+    // Game state functions
+    void renderWinScreen();
+    void checkWinCondition();
+    
     // Timing variables
     double lastFrameTime;
     float deltaTime;
@@ -141,6 +145,12 @@ private:
     
     // Death screen
     float deathScreenTimeout;
+    
+    // Win condition
+    bool gameWon;
+    float winTime;
+    int totalEnemiesKilled;
+    int enemiesToKill; // Number of enemies needed to win
 };
 
 #endif

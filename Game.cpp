@@ -36,7 +36,8 @@ Game::Game()
     arrowSpeed(0.02f), damageTimer(0.0f), damageCooldown(3.0f),
     rightMouseWasPressed(false),
     terrainGenerated(false),
-    deathScreenTimeout(3.0f), lastFrameTime(0.0), deltaTime(0.0f)
+    deathScreenTimeout(3.0f), lastFrameTime(0.0), deltaTime(0.0f),
+    gameWon(false), winTime(0.0f), totalEnemiesKilled(0), enemiesToKill(5)
 {
     // Initialize sword parameters - simplified
     sword.offsetX = baseRadius * 2.5f;  // Initial position
@@ -314,6 +315,9 @@ void Game::update() {
 
     // Update sword
     updateSword();
+
+    // Check win condition
+    checkWinCondition();
 
     // Spawn enemies periodically
     if (enemies.size() < maxEnemies) {
@@ -1320,4 +1324,8 @@ void Game::renderTerrain() {
     }
     
     glBindVertexArray(0);
+}
+
+void Game::checkWinCondition() {
+    // Implementation of checkWinCondition method
 }
